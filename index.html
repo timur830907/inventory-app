@@ -1,6 +1,6 @@
+<script>
 function parseNumber(val) {
     if (val === null || val === undefined) return 0;
-    // Преобразуем любое значение (число, объект, строку) в безопасный формат
     const str = String(val).replace(/\s+/g, '').replace(',', '.');
     const num = parseFloat(str);
     return isNaN(num) ? 0 : num;
@@ -16,13 +16,10 @@ function handleFileSelect(e) {
             const data = new Uint8Array(event.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
             const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            
-            // Получаем массив данных с сырыми значениями
             const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
 
-            if (!jsonData || jsonData.length === 0) return alert("Файл пуст или не содержит данных!");
+            if (!jsonData || jsonData.length === 0) return alert("Файл пуст!");
 
-            // Автоматический поиск строки-заголовка (где найдем "наименование", "код", "товар" или больше 2 заправленных ячеек)
             let headerRowIdx = jsonData.findIndex(row => {
                 if (!Array.isArray(row)) return false;
                 const rowStr = row.join(' ').toLowerCase();
@@ -39,7 +36,7 @@ function handleFileSelect(e) {
             speak("Файл прочитан. Подтвердите сопоставление колонок.");
         } catch (err) {
             console.error(err);
-            alert("Ошибка при чтении файла Excel. Убедитесь, что файл не поврежден.");
+            alert("Ошибка при чтении файла Excel.");
         }
     };
     reader.readAsArrayBuffer(file);
@@ -104,3 +101,4 @@ function applyMapping() {
     document.getElementById('mappingPanel').classList.add('hidden');
     speak(`Загружено ${count} позиций`);
 }
+</script>
