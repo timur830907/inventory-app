@@ -1,104 +1,395 @@
-<script>
-function parseNumber(val) {
-    if (val === null || val === undefined) return 0;
-    const str = String(val).replace(/\s+/g, '').replace(',', '.');
-    const num = parseFloat(str);
-    return isNaN(num) ? 0 : num;
-}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Инвентаризационная опись №1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            body { padding: 0; background: white; }
+            .shadow-xl { box-shadow: none !important; }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans p-4">
 
-function handleFileSelect(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+    <div class="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-md border border-slate-200">
+        
+        <!-- Кнопки управления -->
+        <div class="no-print mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <label class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-lg cursor-pointer transition shadow-sm flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        Загрузить остатки (Excel)
+                        <input type="file" id="excelFile" accept=".xlsx, .xls" class="hidden" onchange="handleFileSelect(event)">
+                    </label>
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        try {
-            const data = new Uint8Array(event.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+                    <button id="voiceBtn" onclick="toggleVoice()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-lg transition shadow-sm flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                        Включить поиск голосом
+                    </button>
+                </div>
 
-            if (!jsonData || jsonData.length === 0) return alert("Файл пуст!");
+                <div class="flex items-center gap-3">
+                    <button onclick="exportToExcel()" class="bg-emerald-700 hover:bg-emerald-800 text-white font-medium px-4 py-2 rounded-lg transition shadow-sm flex items-center gap-2">
+                        Скачать результат
+                    </button>
+                    <button onclick="window.print()" class="bg-slate-700 hover:bg-slate-800 text-white font-medium px-4 py-2 rounded-lg transition shadow-sm flex items-center gap-2">
+                        Печать
+                    </button>
+                </div>
+            </div>
 
-            let headerRowIdx = jsonData.findIndex(row => {
-                if (!Array.isArray(row)) return false;
-                const rowStr = row.join(' ').toLowerCase();
-                return rowStr.includes('наимен') || rowStr.includes('товар') || rowStr.includes('номенкл') || row.filter(Boolean).length >= 3;
+            <!-- Панель сопоставления колонок -->
+            <div id="mappingPanel" class="hidden p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <h3 class="font-bold text-amber-900 mb-2">Сопоставление колонок из файла Excel</h3>
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-3 mb-3 text-xs">
+                    <div>
+                        <label class="block text-slate-600 mb-1">Наименование:*</label>
+                        <select id="mapName" class="w-full border p-1 rounded bg-white"></select>
+                    </div>
+                    <div>
+                        <label class="block text-slate-600 mb-1">Инв. № / Код:</label>
+                        <select id="mapCode" class="w-full border p-1 rounded bg-white"></select>
+                    </div>
+                    <div>
+                        <label class="block text-slate-600 mb-1">Ед. изм.:</label>
+                        <select id="mapUnit" class="w-full border p-1 rounded bg-white"></select>
+                    </div>
+                    <div>
+                        <label class="block text-slate-600 mb-1">Цена:</label>
+                        <select id="mapPrice" class="w-full border p-1 rounded bg-white"></select>
+                    </div>
+                    <div>
+                        <label class="block text-slate-600 mb-1">Учет (Кол-во):*</label>
+                        <select id="mapAccQty" class="w-full border p-1 rounded bg-white"></select>
+                    </div>
+                </div>
+                <button onclick="applyMapping()" class="bg-amber-600 hover:bg-amber-700 text-white font-medium px-4 py-1.5 rounded text-sm transition">
+                    Загрузить в таблицу
+                </button>
+            </div>
+
+            <div class="text-xs text-slate-600 bg-white p-2.5 rounded border border-slate-200">
+                <b>Диктуйте для поиска:</b> «[Название или №] [число]» или «[Название] факт [число]»<br>
+                <i>Пример: «Яблоко 5», «Апельсин факт 10» или «Инвентарный 1024 количество 2»</i>
+            </div>
+        </div>
+
+        <!-- Шапка документа -->
+        <div class="text-right text-xs mb-4">
+            <b>Приложение 4</b> к Правилам проведения инвентаризации в ГУ РК
+        </div>
+
+        <h2 class="text-center font-bold text-lg my-3">
+            ИНВЕНТАРИЗАЦИОННАЯ ОПИСЬ (СЛИЧИТЕЛЬНАЯ ВЕДОМОСТЬ) № 1
+        </h2>
+
+        <!-- Таблица -->
+        <div class="overflow-x-auto">
+            <table id="inventoryTable" class="w-full border-collapse border border-black text-xs">
+                <thead>
+                    <tr class="bg-slate-100 text-center font-bold">
+                        <th class="border border-black p-1">№</th>
+                        <th class="border border-black p-1">Наименование активов / запасов</th>
+                        <th class="border border-black p-1">Инв. №</th>
+                        <th class="border border-black p-1">Ед.</th>
+                        <th class="border border-black p-1">Цена, тг</th>
+                        <th class="border border-black p-1 bg-blue-100">Фактически (кол)</th>
+                        <th class="border border-black p-1 bg-blue-100">Фактически (сумма)</th>
+                        <th class="border border-black p-1">По учету (кол)</th>
+                        <th class="border border-black p-1">По учету (сумма)</th>
+                        <th class="border border-black p-1 bg-red-100">Недостача (кол)</th>
+                        <th class="border border-black p-1 bg-red-100">Недостача (сумма)</th>
+                        <th class="border border-black p-1 bg-green-100">Излишки (кол)</th>
+                        <th class="border border-black p-1 bg-green-100">Излишки (сумма)</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <!-- Загружаемые данные -->
+                </tbody>
+                <tfoot>
+                    <tr class="font-bold bg-slate-100 text-right">
+                        <td colspan="4" class="border border-black p-1 text-center">ИТОГО:</td>
+                        <td id="totPrice" class="border border-black p-1">-</td>
+                        <td id="totFactQty" class="border border-black p-1 text-center bg-blue-100">0</td>
+                        <td id="totFactSum" class="border border-black p-1 bg-blue-100">0.00</td>
+                        <td id="totAccQty" class="border border-black p-1 text-center">0</td>
+                        <td id="totAccSum" class="border border-black p-1">0.00</td>
+                        <td id="totDefQty" class="border border-black p-1 text-center bg-red-100 text-red-600">0</td>
+                        <td id="totDefSum" class="border border-black p-1 bg-red-100 text-red-600">0.00</td>
+                        <td id="totSurQty" class="border border-black p-1 text-center bg-green-100 text-green-600">0</td>
+                        <td id="totSurSum" class="border border-black p-1 bg-green-100 text-green-600">0.00</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!-- Логика и скрипты -->
+    <script>
+        let rawHeaders = [];
+        let rawExcelData = [];
+        let recognition = null;
+        let isListening = false;
+
+        function parseNumber(val) {
+            if (val === null || val === undefined) return 0;
+            const str = String(val).replace(/\s+/g, '').replace(',', '.');
+            const num = parseFloat(str);
+            return isNaN(num) ? 0 : num;
+        }
+
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = new Uint8Array(event.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+
+                    if (!jsonData || jsonData.length === 0) return alert("Файл пуст!");
+
+                    let headerRowIdx = jsonData.findIndex(row => {
+                        if (!Array.isArray(row)) return false;
+                        const rowStr = row.join(' ').toLowerCase();
+                        return rowStr.includes('наимен') || rowStr.includes('товар') || rowStr.includes('номенкл') || row.filter(Boolean).length >= 3;
+                    });
+
+                    if (headerRowIdx === -1) headerRowIdx = 0;
+
+                    rawHeaders = jsonData[headerRowIdx].map(h => String(h || '').trim());
+                    rawExcelData = jsonData.slice(headerRowIdx + 1);
+
+                    populateDropdowns(rawHeaders);
+                    document.getElementById('mappingPanel').classList.remove('hidden');
+                    speak("Файл прочитан. Подтвердите сопоставление колонок.");
+                } catch (err) {
+                    console.error(err);
+                    alert("Ошибка при чтении файла Excel.");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function populateDropdowns(headers) {
+            const selects = ['mapName', 'mapCode', 'mapUnit', 'mapPrice', 'mapAccQty'];
+            selects.forEach(id => {
+                const sel = document.getElementById(id);
+                sel.innerHTML = '<option value="-1">-- Не выбрано --</option>';
+                headers.forEach((h, idx) => {
+                    sel.innerHTML += `<option value="${idx}">${h}</option>`;
+                });
             });
 
-            if (headerRowIdx === -1) headerRowIdx = 0;
-
-            rawHeaders = jsonData[headerRowIdx].map(h => String(h || '').trim());
-            rawExcelData = jsonData.slice(headerRowIdx + 1);
-
-            populateDropdowns(rawHeaders);
-            document.getElementById('mappingPanel').classList.remove('hidden');
-            speak("Файл прочитан. Подтвердите сопоставление колонок.");
-        } catch (err) {
-            console.error(err);
-            alert("Ошибка при чтении файла Excel.");
+            headers.forEach((h, idx) => {
+                const name = h.toLowerCase();
+                if (name.includes('наименов') || name.includes('товар') || name.includes('номенклат') || name.includes('актив') || name.includes('название')) setSelect('mapName', idx);
+                if (name.includes('инв') || name.includes('код') || name.includes('номер') || name.includes('артикул')) setSelect('mapCode', idx);
+                if (name.includes('ед') || name.includes('изм')) setSelect('mapUnit', idx);
+                if (name.includes('цена') || name.includes('стоимос') || name.includes('сумма')) setSelect('mapPrice', idx);
+                if (name.includes('учет') || name.includes('остаток') || name.includes('кол') || name.includes('кол-во') || name.includes('количество') || name.includes('баланс')) setSelect('mapAccQty', idx);
+            });
         }
-    };
-    reader.readAsArrayBuffer(file);
-}
 
-function applyMapping() {
-    const nameIdx = parseInt(document.getElementById('mapName').value);
-    const codeIdx = parseInt(document.getElementById('mapCode').value);
-    const unitIdx = parseInt(document.getElementById('mapUnit').value);
-    const priceIdx = parseInt(document.getElementById('mapPrice').value);
-    const accQtyIdx = parseInt(document.getElementById('mapAccQty').value);
+        function setSelect(id, val) {
+            document.getElementById(id).value = val;
+        }
 
-    if (nameIdx === -1) return alert("Укажите колонку с Наименованием!");
+        function applyMapping() {
+            const nameIdx = parseInt(document.getElementById('mapName').value);
+            const codeIdx = parseInt(document.getElementById('mapCode').value);
+            const unitIdx = parseInt(document.getElementById('mapUnit').value);
+            const priceIdx = parseInt(document.getElementById('mapPrice').value);
+            const accQtyIdx = parseInt(document.getElementById('mapAccQty').value);
 
-    const tbody = document.getElementById('tableBody');
-    tbody.innerHTML = '';
+            if (nameIdx === -1) return alert("Укажите колонку с Наименованием!");
 
-    let count = 0;
-    rawExcelData.forEach(row => {
-        if (!Array.isArray(row)) return;
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
 
-        const nameVal = row[nameIdx] !== undefined ? String(row[nameIdx]).trim() : '';
-        if (!nameVal) return;
+            let count = 0;
+            rawExcelData.forEach(row => {
+                if (!Array.isArray(row)) return;
 
-        count++;
-        const codeVal = codeIdx !== -1 && row[codeIdx] !== undefined ? String(row[codeIdx]).trim() : '';
-        const unitVal = unitIdx !== -1 && row[unitIdx] !== undefined ? String(row[unitIdx]).trim() : 'шт';
-        
-        const priceVal = priceIdx !== -1 ? parseNumber(row[priceIdx]) : 0;
-        const accQtyVal = accQtyIdx !== -1 ? parseNumber(row[accQtyIdx]) : 0;
-        const factQtyVal = 0;
+                const nameVal = row[nameIdx] !== undefined ? String(row[nameIdx]).trim() : '';
+                if (!nameVal) return;
 
-        const accSumVal = priceVal * accQtyVal;
-        const factSumVal = priceVal * factQtyVal;
-        
-        const diff = factQtyVal - accQtyVal;
-        const defQty = diff < 0 ? Math.abs(diff) : 0;
-        const defSum = defQty * priceVal;
-        const surQty = diff > 0 ? diff : 0;
-        const surSum = surQty * priceVal;
+                count++;
+                const codeVal = codeIdx !== -1 && row[codeIdx] !== undefined ? String(row[codeIdx]).trim() : '';
+                const unitVal = unitIdx !== -1 && row[unitIdx] !== undefined ? String(row[unitIdx]).trim() : 'шт';
+                
+                const priceVal = priceIdx !== -1 ? parseNumber(row[priceIdx]) : 0;
+                const accQtyVal = accQtyIdx !== -1 ? parseNumber(row[accQtyIdx]) : 0;
+                const factQtyVal = 0;
 
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td class="border border-black p-1">${count}</td>
-            <td class="border border-black p-1"><input type="text" value="${nameVal}" class="w-full name-field outline-none bg-transparent"></td>
-            <td class="border border-black p-1"><input type="text" value="${codeVal}" class="w-full text-center code-field outline-none bg-transparent"></td>
-            <td class="border border-black p-1"><input type="text" value="${unitVal}" class="w-10 text-center outline-none bg-transparent"></td>
-            <td class="border border-black p-1"><input type="number" step="any" value="${priceVal}" onchange="recalcRow(this.closest('tr'))" class="w-20 text-right price outline-none bg-transparent"></td>
-            <td class="border border-black p-1 bg-blue-50"><input type="number" step="any" value="${factQtyVal}" onchange="recalcRow(this.closest('tr'))" class="w-16 text-center factQty outline-none font-bold bg-transparent"></td>
-            <td class="border border-black p-1 bg-blue-50 factSum">${factSumVal.toFixed(2)}</td>
-            <td class="border border-black p-1"><input type="number" step="any" value="${accQtyVal}" onchange="recalcRow(this.closest('tr'))" class="w-16 text-center accQty outline-none bg-transparent"></td>
-            <td class="border border-black p-1 accSum">${accSumVal.toFixed(2)}</td>
-            <td class="border border-black p-1 bg-red-50 text-red-600 defQty">${defQty}</td>
-            <td class="border border-black p-1 bg-red-50 text-red-600 defSum">${defSum.toFixed(2)}</td>
-            <td class="border border-black p-1 bg-green-50 text-green-600 surQty">${surQty}</td>
-            <td class="border border-black p-1 bg-green-50 text-green-600 surSum">${surSum.toFixed(2)}</td>
-        `;
-        tbody.appendChild(tr);
-    });
+                const accSumVal = priceVal * accQtyVal;
+                const factSumVal = priceVal * factQtyVal;
+                
+                const diff = factQtyVal - accQtyVal;
+                const defQty = diff < 0 ? Math.abs(diff) : 0;
+                const defSum = defQty * priceVal;
+                const surQty = diff > 0 ? diff : 0;
+                const surSum = surQty * priceVal;
 
-    recalcTotals();
-    document.getElementById('mappingPanel').classList.add('hidden');
-    speak(`Загружено ${count} позиций`);
-}
-</script>
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="border border-black p-1 text-center">${count}</td>
+                    <td class="border border-black p-1"><input type="text" value="${nameVal}" class="w-full name-field outline-none bg-transparent"></td>
+                    <td class="border border-black p-1"><input type="text" value="${codeVal}" class="w-full text-center code-field outline-none bg-transparent"></td>
+                    <td class="border border-black p-1"><input type="text" value="${unitVal}" class="w-10 text-center outline-none bg-transparent"></td>
+                    <td class="border border-black p-1"><input type="number" step="any" value="${priceVal}" onchange="recalcRow(this.closest('tr'))" class="w-20 text-right price outline-none bg-transparent"></td>
+                    <td class="border border-black p-1 bg-blue-50"><input type="number" step="any" value="${factQtyVal}" onchange="recalcRow(this.closest('tr'))" class="w-16 text-center factQty outline-none font-bold bg-transparent"></td>
+                    <td class="border border-black p-1 text-right bg-blue-50 factSum">${factSumVal.toFixed(2)}</td>
+                    <td class="border border-black p-1"><input type="number" step="any" value="${accQtyVal}" onchange="recalcRow(this.closest('tr'))" class="w-16 text-center accQty outline-none bg-transparent"></td>
+                    <td class="border border-black p-1 text-right accSum">${accSumVal.toFixed(2)}</td>
+                    <td class="border border-black p-1 text-center bg-red-50 text-red-600 defQty">${defQty}</td>
+                    <td class="border border-black p-1 text-right bg-red-50 text-red-600 defSum">${defSum.toFixed(2)}</td>
+                    <td class="border border-black p-1 text-center bg-green-50 text-green-600 surQty">${surQty}</td>
+                    <td class="border border-black p-1 text-right bg-green-50 text-green-600 surSum">${surSum.toFixed(2)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            recalcTotals();
+            document.getElementById('mappingPanel').classList.add('hidden');
+            speak(`Загружено ${count} позиций`);
+        }
+
+        function recalcRow(tr) {
+            const price = parseNumber(tr.querySelector('.price').value);
+            const factQty = parseNumber(tr.querySelector('.factQty').value);
+            const accQty = parseNumber(tr.querySelector('.accQty').value);
+
+            const factSum = price * factQty;
+            const accSum = price * accQty;
+            const diff = factQty - accQty;
+
+            const defQty = diff < 0 ? Math.abs(diff) : 0;
+            const defSum = defQty * price;
+            const surQty = diff > 0 ? diff : 0;
+            const surSum = surQty * price;
+
+            tr.querySelector('.factSum').textContent = factSum.toFixed(2);
+            tr.querySelector('.accSum').textContent = accSum.toFixed(2);
+            tr.querySelector('.defQty').textContent = defQty;
+            tr.querySelector('.defSum').textContent = defSum.toFixed(2);
+            tr.querySelector('.surQty').textContent = surQty;
+            tr.querySelector('.surSum').textContent = surSum.toFixed(2);
+
+            recalcTotals();
+        }
+
+        function recalcTotals() {
+            let factQty = 0, factSum = 0, accQty = 0, accSum = 0;
+            let defQty = 0, defSum = 0, surQty = 0, surSum = 0;
+
+            document.querySelectorAll('#tableBody tr').forEach(tr => {
+                factQty += parseNumber(tr.querySelector('.factQty').value);
+                factSum += parseNumber(tr.querySelector('.factSum').textContent);
+                accQty += parseNumber(tr.querySelector('.accQty').value);
+                accSum += parseNumber(tr.querySelector('.accSum').textContent);
+                defQty += parseNumber(tr.querySelector('.defQty').textContent);
+                defSum += parseNumber(tr.querySelector('.defSum').textContent);
+                surQty += parseNumber(tr.querySelector('.surQty').textContent);
+                surSum += parseNumber(tr.querySelector('.surSum').textContent);
+            });
+
+            document.getElementById('totFactQty').textContent = factQty;
+            document.getElementById('totFactSum').textContent = factSum.toFixed(2);
+            document.getElementById('totAccQty').textContent = accQty;
+            document.getElementById('totAccSum').textContent = accSum.toFixed(2);
+            document.getElementById('totDefQty').textContent = defQty;
+            document.getElementById('totDefSum').textContent = defSum.toFixed(2);
+            document.getElementById('totSurQty').textContent = surQty;
+            document.getElementById('totSurSum').textContent = surSum.toFixed(2);
+        }
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'ru-RU';
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function toggleVoice() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                return alert("Голосовой ввод не поддерживается вашим браузером (используйте Google Chrome).");
+            }
+
+            const btn = document.getElementById('voiceBtn');
+            if (isListening) {
+                recognition.stop();
+                return;
+            }
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'ru-RU';
+            recognition.continuous = true;
+            recognition.interimResults = false;
+
+            recognition.onstart = () => {
+                isListening = true;
+                btn.classList.replace('bg-emerald-600', 'bg-red-600');
+                btn.classList.replace('hover:bg-emerald-700', 'hover:bg-red-700');
+                btn.innerHTML = '🛑 Остановить поиск';
+            };
+
+            recognition.onend = () => {
+                isListening = false;
+                btn.classList.replace('bg-red-600', 'bg-emerald-600');
+                btn.classList.replace('hover:bg-red-700', 'hover:bg-emerald-700');
+                btn.innerHTML = '🎤 Включить поиск голосом';
+            };
+
+            recognition.onresult = (event) => {
+                const text = event.results[event.results.length - 1][0].transcript.toLowerCase();
+                processVoiceCommand(text);
+            };
+
+            recognition.start();
+        }
+
+        function processVoiceCommand(text) {
+            const numMatch = text.match(/\d+/);
+            if (!numMatch) return;
+            const num = parseFloat(numMatch[0]);
+
+            const rows = document.querySelectorAll('#tableBody tr');
+            for (let tr of rows) {
+                const name = tr.querySelector('.name-field').value.toLowerCase();
+                const code = tr.querySelector('.code-field').value.toLowerCase();
+
+                const cleanText = text.replace(numMatch[0], '').replace(/(факт|количество|кол-во|штук|шт)/g, '').trim();
+
+                if ((cleanText && name.includes(cleanText)) || (code && cleanText && code.includes(cleanText))) {
+                    const factInput = tr.querySelector('.factQty');
+                    factInput.value = num;
+                    recalcRow(tr);
+                    tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    tr.classList.add('bg-yellow-100');
+                    setTimeout(() => tr.classList.remove('bg-yellow-100'), 2000);
+                    speak(`Установлено ${num} для ${name}`);
+                    break;
+                }
+            }
+        }
+
+        function exportToExcel() {
+            const table = document.getElementById('inventoryTable');
+            const wb = XLSX.utils.table_to_book(table, { sheet: "Опись" });
+            XLSX.writeFile(wb, "Инвентаризационная_опись.xlsx");
+        }
+    </script>
+</body>
+</html>
