@@ -135,7 +135,6 @@ let rawHeaders = [];
 let recognition;
 let isListening = false;
 
-// Озвучка голосом браузера
 function speak(text) {
     if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -240,7 +239,6 @@ function applyMapping() {
     speak(`Загружено ${count} позиций`);
 }
 
-// Голосовое управление
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     recognition = new SpeechRecognition();
@@ -272,7 +270,6 @@ function toggleMic() {
     }
 }
 
-// Поиск позиции и извлечение количества
 function searchAndApplyFact(text) {
     const numberMatches = text.match(/\d+/g);
     if (!numberMatches) {
@@ -317,11 +314,38 @@ function searchAndApplyFact(text) {
         const foundName = foundTr.querySelector('.name-field').value;
         speak(`${foundName}, факт ${factQty}`);
     } else {
-        speak(`Ошибка. Позиция ${searchQuery} не найдена`);
+        const tbody = document.getElementById('tableBody');
+        const count = tbody.querySelectorAll('tr').length + 1;
+        const formattedName = searchQuery.charAt(0).toUpperCase() + searchQuery.slice(1);
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="border border-black p-1">${count}</td>
+            <td class="border border-black p-1"><input type="text" value="${formattedName}" class="w-full name-field outline-none bg-transparent"></td>
+            <td class="border border-black p-1"><input type="text" value="—" class="w-full text-center code-field outline-none bg-transparent"></td>
+            <td class="border border-black p-1"><input type="text" value="шт" class="w-10 text-center outline-none bg-transparent"></td>
+            <td class="border border-black p-1"><input type="number" value="0" onchange="recalcRow(this.closest('tr'))" class="w-20 text-right price outline-none bg-transparent"></td>
+            <td class="border border-black p-1 bg-blue-50"><input type="number" value="${factQty}" onchange="recalcRow(this.closest('tr'))" class="w-16 text-center factQty outline-none font-bold bg-transparent"></td>
+            <td class="border border-black p-1 bg-blue-50 factSum">0.00</td>
+            <td class="border border-black p-1"><input type="number" value="0" onchange="recalcRow(this.closest('tr'))" class="w-16 text-center accQty outline-none bg-transparent"></td>
+            <td class="border border-black p-1 accSum">0.00</td>
+            <td class="border border-black p-1 bg-red-50 text-red-600 defQty">0</td>
+            <td class="border border-black p-1 bg-red-50 text-red-600 defSum">0.00</td>
+            <td class="border border-black p-1 bg-green-50 text-green-600 surQty">${factQty}</td>
+            <td class="border border-black p-1 bg-green-50 text-green-600 surSum">0.00</td>
+        `;
+
+        tbody.appendChild(tr);
+        recalcRow(tr, true);
+
+        tr.classList.add('highlight');
+        tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => tr.classList.remove('highlight'), 2000);
+
+        speak(`Товар ${formattedName} не найден. Добавлена новая строка, факт ${factQty}`);
     }
 }
 
-// Расчет строки
 function recalcRow(tr, updateTotals = true) {
     const p = parseFloat(tr.querySelector('.price').value) || 0;
     const f = parseFloat(tr.querySelector('.factQty').value) || 0;
@@ -341,7 +365,6 @@ function recalcRow(tr, updateTotals = true) {
     if (updateTotals) recalcTotals();
 }
 
-// Подсчет строки ИТОГО
 function recalcTotals() {
     let fQty = 0, fSum = 0, aQty = 0, aSum = 0, dQty = 0, dSum = 0, sQty = 0, sSum = 0;
 
@@ -368,7 +391,17 @@ function recalcTotals() {
 
 function exportToExcel() {
     const table = document.getElementById('inventoryTable');
-    const wb = XLSX.utils.table_to_book(table, { sheet: "Сличительная" });
+    const cloneTable = table.cloneNode(true);
+
+    const originalInputs = table.querySelectorAll('input');
+    const clonedInputs = cloneTable.querySelectorAll('input');
+
+    originalInputs.forEach((input, index) => {
+        const parentTd = clonedInputs[index].parentNode;
+        parentTd.innerText = input.value;
+    });
+
+    const wb = XLSX.utils.table_to_book(cloneTable, { sheet: "Сличительная" });
     XLSX.writeFile(wb, "Inventory_Result.xlsx");
     speak("Результат сохранен в Excel");
 }
