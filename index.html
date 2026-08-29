@@ -191,12 +191,33 @@
             });
 
             headers.forEach((h, idx) => {
-                const name = h.toLowerCase();
-                if (name.includes('наименов') || name.includes('товар') || name.includes('номенклат') || name.includes('актив') || name.includes('название')) setSelect('mapName', idx);
-                if (name.includes('инв') || name.includes('код') || name.includes('номер') || name.includes('артикул')) setSelect('mapCode', idx);
-                if (name.includes('ед') || name.includes('изм')) setSelect('mapUnit', idx);
-                if (name.includes('цена') || name.includes('стоимос') || name.includes('сумма')) setSelect('mapPrice', idx);
-                if (name.includes('учет') || name.includes('остаток') || name.includes('кол') || name.includes('кол-во') || name.includes('количество') || name.includes('баланс')) setSelect('mapAccQty', idx);
+                const name = String(h || '').toLowerCase().trim();
+
+                // 1. Наименование
+                if (name.includes('наименов') || name.includes('товар') || name.includes('номенклат') || name.includes('актив') || name.includes('название')) {
+                    setSelect('mapName', idx);
+                }
+                // 2. Код / Инв №
+                else if (name.includes('инв') || name.includes('код') || name.includes('номер') || name.includes('артикул')) {
+                    setSelect('mapCode', idx);
+                }
+                // 3. Единица измерения
+                else if (name.includes('ед') || name.includes('изм')) {
+                    setSelect('mapUnit', idx);
+                }
+                // 4. Цена
+                else if ((name.includes('цена') || name.includes('стоимос')) && !name.includes('сумма')) {
+                    setSelect('mapPrice', idx);
+                }
+                // 5. Учет / Остаток
+                else if (
+                    name.includes('учет') || 
+                    name.includes('остаток') || 
+                    name.includes('баланс') || 
+                    (name.includes('кол') && !name.includes('факт') && !name.includes('недостач') && !name.includes('излиш'))
+                ) {
+                    setSelect('mapAccQty', idx);
+                }
             });
         }
 
