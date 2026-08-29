@@ -272,12 +272,8 @@ function toggleMic() {
 
 function searchAndApplyFact(text) {
     const numberMatches = text.match(/\d+/g);
-    if (!numberMatches) {
-        speak("Не указано количество.");
-        return;
-    }
-
-    const factQty = parseFloat(numberMatches[numberMatches.length - 1]);
+    // Если число не озвучено, по умолчанию берется 1
+    const factQty = numberMatches ? parseFloat(numberMatches[numberMatches.length - 1]) : 1;
     
     let searchQuery = text
         .replace(/факт|количество|штук|поз|строка|найди|инвентарный/g, '')
